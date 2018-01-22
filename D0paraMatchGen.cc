@@ -100,6 +100,8 @@ private:
     float bestvy;
     float bestvz;
     float bestvzflip;
+
+    float HFtotalEnergy;
     
     double multMax_;
     double multMin_;
@@ -171,6 +173,7 @@ private:
     edm::EDGetTokenT<reco::VertexCompositeCandidateCollection> recoVertexCompositeCandidateCollection_Token_;
     edm::EDGetTokenT<edm::ValueMap<reco::DeDxData> > Dedx_Token1_;
     edm::EDGetTokenT<edm::ValueMap<reco::DeDxData> > Dedx_Token2_;
+    edm::EDGetTokenT<edm::SortedCollection<CaloTower,edm::StrictWeakOrdering<CaloTower> > > towerMaker_;
     
     edm::EDGetTokenT<reco::GenParticleCollection> tok_genParticle_;
 };
@@ -195,10 +198,11 @@ D0TreeMatchGen::D0TreeMatchGen(const edm::ParameterSet& iConfig)
     multMin_ = iConfig.getUntrackedParameter<double>("multMin", 999.9);
     deltaR_ = iConfig.getUntrackedParameter<double>("deltaR", 0.5);
 
-    tok_offlinePV_ = consumes<reco::VertexCollection>(edm::InputTag("offlinePrimaryVertices"));
-    tok_generalTrk_ = consumes<reco::TrackCollection>(edm::InputTag("generalTracks"));
+    tok_offlinePV_ = consumes<reco::VertexCollection>(edm::InputTag("hiSelectedVertex"));
+    tok_generalTrk_ = consumes<reco::TrackCollection>(edm::InputTag("hiGeneralTracks"));
     recoVertexCompositeCandidateCollection_Token_ = consumes<reco::VertexCompositeCandidateCollection>(edm::InputTag("generalD0CandidatesNew:D0"));
-    
+    towerMaker_ = consumes<edm::SortedCollection<CaloTower,edm::StrictWeakOrdering<CaloTower> > >(edm::InputTag("towerMaker"));
+
     Dedx_Token1_ = consumes<edm::ValueMap<reco::DeDxData> >(edm::InputTag("dedxHarmonic2"));
     Dedx_Token2_ = consumes<edm::ValueMap<reco::DeDxData> >(edm::InputTag("dedxTruncated40"));
     
@@ -238,6 +242,29 @@ iSetup)
     bestvzError = vtx.zError(); bestvxError = vtx.xError(); bestvyError = vtx.yError();
     
     bestvzflip = -bestvz;
+
+    double etHFtowerSumPlus = 0.0;
+    double etHFtowerSumMinus = 0.0;
+    double etHFtowerSum = 0.0;
+    edm::Handle<CaloTowerCollection> towers;
+    iEvent.getByToken(towerMaker_,towers);
+
+    for( size_t i = 0; i<towers->size(); ++ i){
+
+        const CaloTower & tower = (*towers)[i];
+        double eta = tower.eta();
+        bool isHF = tower.ietaAbs() > 29;
+
+        if(isHF && eta > 0){
+            etHFtowerSumPlus += tower.pt();
+        }
+        if(isHF && eta < 0){
+            etHFtowerSumMinus += tower.pt();
+        }
+    }
+
+    etHFtowerSum=etHFtowerSumPlus + etHFtowerSumMinus;
+    HFtotalEnergy = etHFtowerSum;
     
     //if(bestvz < -15.0 || bestvz>15.0) return;
     
@@ -384,6 +411,8 @@ iSetup)
         double py = trk.py();
         double pz = trk.pz();
         mass = trk.mass();
+
+        if( pt < 1.0 ) continue;
         
         const reco::Candidate * d1 = trk.daughter(0);
         const reco::Candidate * d2 = trk.daughter(1);
@@ -530,6 +559,13 @@ iSetup)
         trkChi1 = dau1->normalizedChi2();
         trkChi2 = dau2->normalizedChi2();
         
+	//track nlayer
+        int nlayer1 = dau1->hitPattern().trackerLayersWithMeasurement();
+        int nlayer2 = dau2->hitPattern().trackerLayersWithMeasurement();
+
+	if(trkChi1/nlayer1 > 0.15) continue;
+	if(trkChi2/nlayer2 > 0.15) continue;
+
         //track pT error
         ptErr1 = dau1->ptError();
         ptErr2 = dau2->ptError();
@@ -592,7 +628,7 @@ iSetup)
         dlerror = sqrt(ROOT::Math::Similarity(totalCov, distanceVector))/dl;
         
         dlos = dl/dlerror;
-        
+  
         //Decay length 2D
         SVector6 v1(vtx.covariance(0,0), vtx.covariance(0,1),vtx.covariance(1,1),0,0,0);
         SVector6 v2(trk.vertexCovariance(0,0), trk.vertexCovariance(0,1),trk.vertexCovariance(1,1),0,0,0);
@@ -647,6 +683,8 @@ D0TreeMatchGen::beginJob()
     //D0para->Branch("vtxY",&bestvy);
     D0para->Branch("vtxZ",&bestvz);
     D0para->Branch("vtxZFlip",&bestvzflip);
+
+    D0para->Branch("ETT",&HFtotalEnergy);
     
     //SV info
     D0para->Branch("pT",&pt);
@@ -720,7 +758,6 @@ D0TreeMatchGen::endJob() {
 
 //define this as a plug-in
 DEFINE_FWK_MODULE(D0TreeMatchGen);
-
 
 
 
