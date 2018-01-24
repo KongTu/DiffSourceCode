@@ -55,6 +55,8 @@
 #include "TrackingTools/PatternTools/interface/TSCBLBuilderNoMaterial.h"
 
 #include "DataFormats/HepMCCandidate/interface/GenParticle.h"
+#include "DataFormats/HeavyIonEvent/interface/Centrality.h"
+
 
 #include <Math/Functions.h>
 #include <Math/SVector.h>
@@ -151,7 +153,8 @@ private:
     bool isSwap;
     bool isPrompt;
     int idmom_reco;
-    bool matchGEN;    
+    bool matchGEN;  
+    int hiBin;  
 
     float pt_gen;
     float eta_gen;
@@ -167,6 +170,9 @@ private:
     vector<double> *Dvector1;
     vector<double> *Dvector2;
     vector<int> *pVectIDmom;
+
+    edm::EDGetTokenT<reco::Centrality> centralityToken_;
+    edm::EDGetTokenT<int> centralityBinToken_;
     
     edm::EDGetTokenT<reco::VertexCollection> tok_offlinePV_;
     edm::EDGetTokenT<reco::TrackCollection> tok_generalTrk_;
@@ -197,6 +203,9 @@ D0TreeMatchGen::D0TreeMatchGen(const edm::ParameterSet& iConfig)
     multMax_ = iConfig.getUntrackedParameter<double>("multMax", 0.0);
     multMin_ = iConfig.getUntrackedParameter<double>("multMin", 999.9);
     deltaR_ = iConfig.getUntrackedParameter<double>("deltaR", 0.5);
+
+    centralityToken_ = consumes<reco::Centrality>(iConfig.getParameter<edm::InputTag>("centralitySrc"));
+    centralityBinToken_ = consumes<int>(iConfig.getParameter<edm::InputTag>("centralityBinSrc"));
 
     tok_offlinePV_ = consumes<reco::VertexCollection>(edm::InputTag("hiSelectedVertex"));
     tok_generalTrk_ = consumes<reco::TrackCollection>(edm::InputTag("hiGeneralTracks"));
@@ -242,6 +251,12 @@ iSetup)
     bestvzError = vtx.zError(); bestvxError = vtx.xError(); bestvyError = vtx.yError();
     
     bestvzflip = -bestvz;
+
+    edm::Handle<reco::Centrality> centrality;
+    iEvent.getByToken(centralityToken_, centrality);
+    edm::Handle<int> cbin;
+    iEvent.getByToken(centralityBinToken_, cbin);
+    hiBin = *cbin;
 
     double etHFtowerSumPlus = 0.0;
     double etHFtowerSumMinus = 0.0;
@@ -300,6 +315,7 @@ iSetup)
         int id = trk.pdgId();
         if(fabs(id)!=421) continue; //check is D0
         if(trk.numberOfDaughters()!=2) continue; //check 2-pron decay
+        if(trk.collisionId() != 0) continue; //only pythia D is kept
 
         nD = nD+1;
         
@@ -683,7 +699,7 @@ D0TreeMatchGen::beginJob()
     //D0para->Branch("vtxY",&bestvy);
     D0para->Branch("vtxZ",&bestvz);
     D0para->Branch("vtxZFlip",&bestvzflip);
-
+    D0para->Branch("hiBin",&hiBin);
     D0para->Branch("ETT",&HFtotalEnergy);
     
     //SV info
@@ -758,7 +774,6 @@ D0TreeMatchGen::endJob() {
 
 //define this as a plug-in
 DEFINE_FWK_MODULE(D0TreeMatchGen);
-
 
 
 
